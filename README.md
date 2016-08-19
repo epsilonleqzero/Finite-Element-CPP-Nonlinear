@@ -1,2 +1,3 @@
 # Finite-Element-CPP-Nonlinear
-Nonlinear FEM
+
+This repository implements a nonlinear finite element method in C++.
