@@ -40,8 +40,9 @@ Mesh::Mesh(vector<double> meshprops) {
 	makeMesh(xr, yr);
 	// Assemble stiffness matrix
 
-	vector<mat> stiffmass = assembleMatrix();
+	vector<sp_mat> stiffmass = assembleMatrix();
 	stiffness=stiffmass[0];
+	mass=stiffmass[1];
 	// Calculate boundary nodes.
 	findBoundary();
 }
@@ -148,10 +149,12 @@ vector<sp_mat> Mesh::assembleMatrix() {
 	sp_mat A(true, inds.t(), sA, N, N, true, true);
 	vector<sp_mat> matvec(2);
 	matvec[0]=A;
-	vec Mv=accumArray(join_vert(elem.col(0), join_vert(elem.col(1),elem.col(2)))
+	vec Mv=accumArrayM(join_vert(elem.col(0), join_vert(elem.col(1),elem.col(2)))
 			,join_vert(area, join_vert(area,area))/(3.0), N);
-	uvec inds2=regspace<uvec>(0,Mv.n_cols);
-	sp_mat M(join_vert(inds2.t(),inds2.t()),Mv,true);
+	uvec inds2=regspace<uvec>(0,Mv.n_rows-1);
+	umat subs2=join_horiz(inds2,inds2);
+	subs2.print("indices: ");
+	sp_mat M(true,subs2.t(),Mv,N,N,true,true);
 	matvec[1]=M;
 	return matvec;
 }
@@ -212,7 +215,7 @@ void Mesh::findBoundary() {
 	freeNode = find(onebd - isbdNode);
 }
 
-vec Mesh::accumArray(uvec subs,vec ar,uword N){
+vec Mesh::accumArrayM(uvec subs,vec ar,uword N){
 
 	vec S=zeros<vec>(N);
 

@@ -28,7 +28,7 @@ public:
 private:
 
 	std::vector<arma::sp_mat> assembleMatrix();
-	arma::vec Mesh::accumArray(arma::uvec subs,arma::vec ar,arma::uword N);
+	arma::vec accumArrayM(arma::uvec subs,arma::vec ar,arma::uword N);
 	void makeMesh(arma::vec xr,arma::vec yr);
 	void findBoundary();
 	double h;

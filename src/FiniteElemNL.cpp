@@ -17,6 +17,7 @@
 #include "FunSCNL.h"
 #include "FunSCbD.h"
 #include "FunBoltz.h"
+#include <iostream>
 
 using namespace std;
 using namespace arma;
@@ -64,13 +65,11 @@ FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun) {
 	u.rows(mesh.bdNode)=bdfun->evalF(node.rows(mesh.bdNode));
 	// Release the function classes created.
 	// Setup system to solve.
-	vec r=b-(mesh.stiffness*u);
+	//vec r=b-(mesh.stiffness*u);
 	mat A(mesh.stiffness);
 	mat M(mesh.mass);
-	//mat Af=A.submat(mesh.freeNode,mesh.freeNode);
-	//mat Mf=M.submat(mesh.freeNode,mesh.freeNode);
 	vec Mv=M.diag();
-	u=NWTsolve(b, u, 30, Mv, A, 1e-6, mesh.freeNode);
+	u=NWTsolve(b, u, 10, Mv, A, 1e-6, mesh.freeNode);
 	delete pde;
 	delete bdfun;
 	delete pdenl;
@@ -161,6 +160,7 @@ vec FiniteElemNL::NWTsolve(vec b,vec u, uword maxitr,
 		r=residual.rows(freeNode);
 		err=norm(r);
 		k=k+1;
+		cout << "Iteration: " << k << "error: " << err << endl;
 	}
 	return u;
 
