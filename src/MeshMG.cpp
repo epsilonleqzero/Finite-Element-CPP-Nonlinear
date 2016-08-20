@@ -39,6 +39,7 @@ MeshMG::MeshMG(vector<double> meshprops) {
 	vec yr = linspace<vec>(meshprops[2], meshprops[3], n + 1);
 	// Create the mesh.
 	makeMesh(xr, yr);
+
 	// Assemble stiffness matrix
 
 	vector<sp_mat> stiffmass = assembleMatrix();
@@ -71,6 +72,7 @@ void MeshMG::makeMesh(vec xr, vec yr) {
 	// Vectorise the values to use for the nodes matrix.
 	vec xv = vectorise(x);
 	N = xv.n_rows;
+	Ns.push_back(N);
 	uword ni = x.n_rows;
 	// Initialize node matrix.
 	node = zeros<mat>(N, 2);
@@ -88,6 +90,7 @@ void MeshMG::makeMesh(vec xr, vec yr) {
 	// Calculate the different values used to create nodes.
 	k(span(1, nnz.n_rows)) = nnz;
 	uword NE = k.n_rows;
+	HBs.push_back(zeros<umat>(NE,3));
 	// Create the elements which will differ by odd and
 	// even elements.
 	umat elemup = zeros<umat>(NE, 3);
@@ -105,6 +108,7 @@ void MeshMG::makeMesh(vec xr, vec yr) {
 	// join all columns together and stack them properly.
 	elem = join_cols(elemup, elemdown);
 	NT = elem.n_rows;
+	refines=0;
 }
 
 /**
@@ -154,9 +158,10 @@ vector<sp_mat> MeshMG::assembleMatrix() {
 			,join_vert(area, join_vert(area,area))/(3.0), N);
 	uvec inds2=regspace<uvec>(0,Mv.n_rows-1);
 	umat subs2=join_horiz(inds2,inds2);
-	subs2.print("indices: ");
 	sp_mat M(true,subs2.t(),Mv,N,N,true,true);
 	matvec[1]=M;
+	masses.push_back(Mv);
+	stiffs.push_back(A);
 	return matvec;
 }
 
@@ -214,6 +219,8 @@ void MeshMG::findBoundary() {
 	uvec onebd = ones<uvec>(isbdNode.n_rows);
 	// Find indices of interior nodes.
 	freeNode = find(onebd - isbdNode);
+	freeNodes.push_back(freeNode);
+
 }
 
 vec MeshMG::accumArrayM(uvec subs,vec ar,uword N){
@@ -246,30 +253,58 @@ void MeshMG::uniformrefine(){
 	umat e23=join_horiz(elem.col(1),elem.col(2));
 	umat e31=join_horiz(elem.col(2),elem.col(0));
 	umat e12=join_horiz(elem.col(0),elem.col(1));
-	umat totalEdge=sort(join_vert(e23,join_vert(e31,e12)),1);
+	umat totalEdge=sort(join_vert(e23,join_vert(e31,e12)),"ascend",1);
 	ArmaFuns funs;
 	umat edge=funs.uniqueu(totalEdge);
-	uword Nedge=totalEdge.n_rows;
 	uvec js=funs.uniqueidx;
 	uword NE=edge.n_rows;
-	umat elem2edge=reshape(js,NT,3);
+	umat elem2edge=zeros<umat>(NT*3,1);
+	elem2edge.col(0)=js;
+	elem2edge.reshape(NT,3);
 	mat nnode=(node.rows(edge.col(0))+node.rows(edge.col(1)))/(2.0);
 	node=join_vert(node,nnode);
-	uvec edge2newNode=regspace(N,N+NE-1);
+	uvec edge2newNode=regspace<uvec>(N,N+NE-1);
 	HB=join_horiz(edge2newNode,edge);
-	uvec t=regspace(0,NT-1);
+	uvec t=regspace<uvec>(0,NT-1);
 	umat p= join_horiz(elem,
 			join_horiz(edge2newNode.rows(elem2edge.col(0)),
 			join_horiz(edge2newNode.rows(elem2edge.col(1)),
 					edge2newNode.rows(elem2edge.col(2)))));
-	elem.rows(t)=join_horiz(p.col(0),join_horiz(p.col(5),p.col(6)));
-	umat nelem=zeros(4*NT-1,3);
+	elem.rows(t)=join_horiz(p.col(0),join_horiz(p.col(4),p.col(5)));
+	umat nelem=zeros<umat>(4*NT,3);
 	nelem.rows(span(NT,2*NT-1))=join_horiz(p.col(5),join_horiz(p.col(1),p.col(3)));
 	nelem.rows(span(2*NT,3*NT-1))=join_horiz(p.col(4),join_horiz(p.col(3),p.col(2)));
 	nelem.rows(span(3*NT,4*NT-1))=join_horiz(p.col(3),join_horiz(p.col(4),p.col(5)));
-	elem=join_vert(elem,nelem);
-	elem.print("elems: ");
-	node.print("nodes: ");
+	nelem.rows(span(0,NT-1))=elem;
+	elem=nelem;
+	NT=elem.n_rows;
+	N=node.n_rows;
+	refines=refines+1;
+	Ns.push_back(N);
+	HBs.push_back(HB);
+	ProHB();
+	vector<sp_mat> stiffmass = assembleMatrix();
+	stiffness=stiffmass[0];
+	mass=stiffmass[1];
+	findBoundary();
+}
+
+void MeshMG::ProHB(){
+	uword nCoarse = Ns[Ns.size()-2];
+	uword nTotal=Ns.back();
+	uword nFineNode=nTotal-nCoarse;
+	cout << nCoarse << endl;
+	uvec coarseNode=regspace<uvec>(0,nCoarse-1);
+	coarse2Fine.push_back(coarseNode);
+	uvec ii=join_vert(coarseNode,join_vert(HB.col(0),HB.col(0)));
+	uvec jj=join_vert(coarseNode,join_vert(HB.col(1),HB.col(2)));
+	cout << ii.n_rows << endl;
+	vec ss=join_vert(ones<vec>(nCoarse),
+			join_vert(0.5*ones<vec>(nFineNode),0.5*ones<vec>(nFineNode)));
+	cout << ss.n_rows << endl;
+	sp_mat Procurr(true,join_horiz(ii,jj).t(),ss,nTotal,nCoarse);
+	Pro.push_back(Procurr);
+
 }
 
 MeshMG::~MeshMG() {

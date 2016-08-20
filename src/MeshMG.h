@@ -17,6 +17,7 @@ public:
 	MeshMG(std::vector<double> meshprops);
 	virtual ~MeshMG();
 	void uniformrefine();
+	std::vector<arma::sp_mat> assembleMatrix();
 	arma::sp_mat stiffness;
 	arma::sp_mat mass;
 	arma::vec area;
@@ -27,12 +28,23 @@ public:
 	arma::uvec freeNode;
 	arma::uword N;
 	arma::umat HB;
+	std::vector<arma::umat> HBs;
+	std::vector<arma::uvec> freeNodes;
+	std::vector<arma::uvec> coarse2Fine;
+	std::vector<arma::uword> Ns;
+	std::vector<arma::sp_mat> stiffs;
+	std::vector<arma::vec> masses;
+	std::vector<arma::umat> elems;
+	//std::vector<arma::vec> areas;
+	std::vector<arma::mat> nodes;
+	std::vector<arma::sp_mat> Pro;
+	int refines;
 
 private:
 
-	std::vector<arma::sp_mat> assembleMatrix();
 	arma::vec accumArrayM(arma::uvec subs,arma::vec ar,arma::uword N);
 	void makeMesh(arma::vec xr,arma::vec yr);
+	void ProHB();
 	void findBoundary();
 	arma::uvec coarseNodeFineIdx;
 	double h;

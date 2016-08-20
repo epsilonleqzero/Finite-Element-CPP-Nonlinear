@@ -38,21 +38,12 @@ FiniteElemNL::FiniteElemNL() {
  */
 FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun) {
 	// Create mesh.
-	Mesh msh(meshprops);
-
+	MeshMG msh(meshprops);
+	msh.uniformrefine();
 	// Choose and apply function using polymorphism.
 	pde=new FunZeros;
 	bdfun=new FunBoltz;
 	pdenl=new FunSCNL;
-//	if(fun.find("Bump") != string::npos ||
-//			fun.find("bump") != string::npos ){
-//		pde=new FunOnes;
-//		bdfun=new FunZeros;
-//	} else{
-//		pde=new FunZeros;
-//		bdfun=new FunBoltz;
-//		pdenl=new FunSCNL;
-//	}
 	// Set the mesh variable to the mesh created.
 	mesh=msh;
 	uword N=mesh.node.n_rows;
@@ -66,10 +57,30 @@ FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun) {
 	// Release the function classes created.
 	// Setup system to solve.
 	//vec r=b-(mesh.stiffness*u);
+	double tol=1e-6;
 	mat A(mesh.stiffness);
 	mat M(mesh.mass);
 	vec Mv=M.diag();
-	u=NWTsolve(b, u, 10, Mv, A, 1e-6, mesh.freeNode);
+	vec fu=pdenl->evalF(u);
+	vec residual=((A*u)+(Mv%fu)-b);
+	uvec freeNode=mesh.freeNode;
+	vec r=residual.rows(freeNode);
+	uword k=0;
+	tol=tol*norm(r);
+	double err=2*tol;
+	while(k<10 && err>tol){
+		u=GSsolve(b, u, 10, Mv, A, 1e-6, mesh.freeNode);
+		u=GSsolveb(b, u, 10, Mv, A, 1e-6, mesh.freeNode);
+		residual=((A*u)+(Mv%fu)-b);
+		r=residual.rows(freeNode);
+		err=norm(r);
+		cout << err << endl;
+		cout << "iteration " << k << endl;
+		k++;
+	}
+	u.print();
+	//u=NWTsolve(b, u, 10, Mv, A, 1e-6, mesh.freeNode);
+
 	delete pde;
 	delete bdfun;
 	delete pdenl;
@@ -133,7 +144,6 @@ vec FiniteElemNL::accumArray(uvec subs,vec ar,uword N){
 			S(i)=0.0;
 		}
 	}
-
 	return S;
 }
 
@@ -141,7 +151,7 @@ vec FiniteElemNL::accumArray(uvec subs,vec ar,uword N){
 vec FiniteElemNL::NWTsolve(vec b,vec u, uword maxitr,
 		vec M, mat A ,double tol,uvec freeNode){
 	// Initial setup
-	uword N=u.n_rows;
+	//uword N=u.n_rows;
 	vec fu=pdenl->evalF(u);
 	//vec Df=pdenl->evalDF(uf);
 	vec residual=((A*u)+(M%fu)-b);
@@ -164,6 +174,66 @@ vec FiniteElemNL::NWTsolve(vec b,vec u, uword maxitr,
 	}
 	return u;
 
+}
+
+vec FiniteElemNL::GSsolve(vec b,vec u, uword maxitr,
+		vec M, mat A ,double tol,uvec freeNode){
+	uword Nu=u.n_rows;
+	for(uword i=1;i<Nu-1;i++){
+		uvec isfree=find(freeNode==i);
+		if(!isfree.empty()){
+			mat Ar=A.row(i);
+			mat currA=(Ar.cols(span(0,i-1))*u.rows(span(0,i-1)))+
+						(Ar.cols(span(i+1,Nu-1))*u.rows(span(i+1,Nu-1)));
+			//double ci=currA(0,0)+b(i);
+			double ci=currA(0,0)+b(i);
+			vector<double> pars(3);
+			pars[0]=ci;
+			pars[1]=A(i,i);
+			pars[2]=M(i);
+			FunSCNL1D nfun(pars);
+			u(i)=NWTsolve1D(nfun,u(i),1e-6,10);
+		}
+	}
+	return u;
+}
+
+vec FiniteElemNL::GSsolveb(vec b,vec u, uword maxitr,
+		vec M, mat A ,double tol,uvec freeNode){
+	uword Nu=u.n_rows;
+	for(uword i=Nu-2;i>=0;i--){
+		uvec isfree=find(freeNode==i);
+		if(!isfree.empty()){
+			mat Ar=A.row(i);
+			mat currA=(Ar.cols(span(0,i-1))*u.rows(span(0,i-1)))
+						+(Ar.cols(span(i,Nu-1))*u.rows(span(i,Nu-1)));
+			double ci=currA(0,0)+b(i);
+			vector<double> pars(3);
+			pars[0]=ci;
+			pars[1]=A(i,i);
+			pars[2]=M(i);
+			FunSCNL1D nfun(pars);
+			u(i)=NWTsolve1D(nfun,u(i),1e-6,10);
+		}
+	}
+	return u;
+}
+
+double FiniteElemNL::NWTsolve1D(FunSCNL1D f, double x0, double tol, uword maxitr){
+	double fp=f.evalF(x0);
+	double df=f.evalDF(x0);
+	uword n=0;
+	double err=abs(fp);
+	cout << "Newton time" << endl;
+	double x=x0;
+	while(err>tol && n<maxitr){
+		x=x-(fp/df);
+		df=f.evalDF(x);
+		fp=f.evalF(x);
+		err=abs(fp);
+		n++;
+	}
+	return x;
 }
 
 FiniteElemNL::~FiniteElemNL() {

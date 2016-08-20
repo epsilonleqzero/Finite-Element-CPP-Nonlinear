@@ -6,11 +6,12 @@
  */
 
 #include "ArmaFuns.h"
+#include <iostream>
+#include <map>
+#include <string>
 
 using namespace arma;
 using namespace std;
-#include <map>
-#include <string>
 
 
 #include "ArmaFuns.h"
@@ -47,16 +48,18 @@ umat ArmaFuns::uniqueu(umat inmat){
 	map<string,uword> unqmap;
 	inmat=sort(inmat,"ascend",1);
 	string mapstr = to_string(inmat(0,0)) + "," + to_string(inmat(0,1));
+	//cout << mapstr << endl;
 	unqmap[mapstr]=0;
 	umat outmat=zeros<umat>(1,inmat.n_cols);
 	outmat.row(0)=inmat.row(0);
 	uniqueidx=zeros<uvec>(inmat.n_rows);
 	uniqueidx(0)=0;
+	uword k=1;
 	for(uword i=1;i<inmat.n_rows;i++){
 		mapstr = to_string(inmat(i,0)) + "," + to_string(inmat(i,1));
-		if(unqmap.count(inmat.row(i).t())<1){
-			unqmap[mapstr]=i;
-			uniqueidx(i)=i;
+		if(unqmap.count(mapstr)<1){
+			unqmap[mapstr]=k;
+			uniqueidx(i)=k++;
 			outmat=join_vert(outmat,inmat.row(i));
 		}else{
 			uniqueidx(i)=unqmap[mapstr];
