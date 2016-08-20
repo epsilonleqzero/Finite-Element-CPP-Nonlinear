@@ -20,9 +20,11 @@ class FiniteElemNL {
 public:
 	FiniteElemNL();
 	FiniteElemNL(std::vector<double> meshprops,std::string fun);
+	FiniteElemNL(std::vector<double> meshprops,std::string fun,int j);
 	virtual ~FiniteElemNL();
 	MeshMG mesh;
 	arma::vec u;
+	arma::uword J;
 private:
 	arma::vec calcRHS();
 	arma::vec NWTsolve(arma::vec b,arma::vec uf, arma::uword maxitr,
@@ -33,6 +35,9 @@ private:
 					arma::vec M, arma::mat A,double tol,arma::uvec freeNode);
 	double NWTsolve1D(FunSCNL1D f, double x0, double tol, arma::uword maxitr);
 	arma::vec accumArray(arma::uvec subs,arma::vec ar,arma::uword N);
+	arma::vec MgFAS(arma::vec b,arma::vec u,
+			arma::uword maxitr,double tol,arma::uword Level);
+	arma::uword J;
 	PdeFun * pde;
 	PdeFunNL * pdenl;
 	PdeFun * bdfun;

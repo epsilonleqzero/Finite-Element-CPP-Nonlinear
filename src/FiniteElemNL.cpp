@@ -36,10 +36,13 @@ FiniteElemNL::FiniteElemNL() {
  * @param fun - string containing the name of the function to use.
  *
  */
-FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun) {
+FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun, int j) {
 	// Create mesh.
 	MeshMG msh(meshprops);
-	msh.uniformrefine();
+	J=j;
+	for(uword i=0;i<J;i++){
+		msh.uniformrefine();
+	}
 	// Choose and apply function using polymorphism.
 	pde=new FunZeros;
 	bdfun=new FunBoltz;
@@ -66,24 +69,69 @@ FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun) {
 	uvec freeNode=mesh.freeNode;
 	vec r=residual.rows(freeNode);
 	uword k=0;
+	uword maxitr =20;
 	tol=tol*norm(r);
 	double err=2*tol;
 	vec u0=u;
-	while(k<1500 && err>tol){
-		vec e=zeros<vec>(node.n_rows);
-		e=GSsolve(residual, e, 15, Mv, A, 1e-6, mesh.freeNode);
-		u.rows(freeNode)=u.rows(freeNode)-e.rows(freeNode);
-		//u=GSsolveb(b, u, 15, Mv, A, 1e-6, mesh.freeNode);
+	while(k<30 && err>tol){
+		u=MgFAS(b,u,maxitr,tol,J);
+		fu=pdenl->evalF(u);
 		residual=((A*u)+(Mv%fu)-b);
 		r=residual.rows(freeNode);
 		err=norm(r);
-		cout << err << endl;
-		cout << "iteration " << k << endl;
+		cout << "Error: " << err << endl;
+		cout << "Iteration: " << k << endl;
 		k++;
 	}
 	u.print();
-	u=NWTsolve(b, u, 10, Mv, A, 1e-6, mesh.freeNode);
+	u=NWTsolve(b, u0, 10, Mv, A, 1e-6, mesh.freeNode);
 
+	delete pde;
+	delete bdfun;
+	delete pdenl;
+}
+
+/**
+ * Constructor to create and run.
+ *
+ * This constructor creates and runs the finite element method using the properties
+ * provided in meshprops and using the name provided in fun.
+ *
+ * @param meshprops - Vector containing the information on the square.
+ * @param fun - string containing the name of the function to use.
+ *
+ */
+FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun) {
+	// Create mesh.
+	MeshMG msh(meshprops);
+	// Choose and apply function using polymorphism.
+	pde=new FunZeros;
+	bdfun=new FunBoltz;
+	pdenl=new FunSCNL;
+	// Set the mesh variable to the mesh created.
+	mesh=msh;
+	uword N=mesh.node.n_rows;
+	// Initialize solution vector.
+	u=zeros<vec>(N);
+	// Calculate the right hand side of the equation.
+	vec b=calcRHS();
+	mat node=mesh.node;
+	// Calculate the boundary condition.
+	u.rows(mesh.bdNode)=bdfun->evalF(node.rows(mesh.bdNode));
+	vec br=b-(mesh.stiffness*u);
+	double tol=1e-6;
+	mat A(mesh.stiffness);
+	mat M(mesh.mass);
+	vec Mv=M.diag();
+	vec fu=pdenl->evalF(u);
+	vec residual=((A*u)+(Mv%fu)-b);
+	uvec freeNode=mesh.freeNode;
+	vec r=residual.rows(freeNode);
+	uword k=0;
+	uword maxitr=20;
+	tol=tol*norm(r);
+	double err=2*tol;
+	u=NWTsolve(b, u, 10, Mv, A, 1e-6, mesh.freeNode);
 	delete pde;
 	delete bdfun;
 	delete pdenl;
@@ -237,6 +285,40 @@ double FiniteElemNL::NWTsolve1D(FunSCNL1D f, double x0, double tol, uword maxitr
 		n++;
 	}
 	return x;
+}
+
+vec FiniteElemNL::MgFAS(vec b,vec u, uword maxitr,double tol,uword level){
+
+	if(level==0){
+		uvec freeNode=mesh.freeNodes[0];
+		vec M=mesh.masses[0];
+		mat A=mesh.stiffs[0];
+		u=NWTsolve(b,u,maxitr,M,A,tol,freeNode);
+		return u;
+	}
+	else{
+		uvec freeNode=mesh.freeNodes[level];
+		vec M=mesh.masses[level];
+		mat A(mesh.stiffs[level]);
+		mat Pro(mesh.Pro[level]);
+		mat Res=Pro.t();
+		// Pre-Smoothing
+		u=GSsolve(b, u, 15, M, A, 1e-6, mesh.freeNode);
+
+		// MG
+		vec fp=pdenl->evalF(u);
+		vec rHc=Res*(b-(A*u)-(M%fp));
+		vec vc=u.rows(mesh.coarse2Fine[level]);
+		vec fpvc=pdenl->evalF(vc);
+		vec rc=(mesh.stiffs[level-1]*vc)+(mesh.masses[level-1]%fpvc);
+		// Recursion step
+		vec uc=MgFAS(rHc+rc,vc,maxitr,tol,level-1);
+		vec eh=Pro*(uc-vc);
+		u=u+eh;
+		// Pre-Smoothing
+		u=GSsolveb(b, u, 15, M, A, 1e-6, mesh.freeNode);
+		return u;
+	}
 }
 
 FiniteElemNL::~FiniteElemNL() {

@@ -34,9 +34,7 @@ public:
 	std::vector<arma::uword> Ns;
 	std::vector<arma::sp_mat> stiffs;
 	std::vector<arma::vec> masses;
-	std::vector<arma::umat> elems;
 	//std::vector<arma::vec> areas;
-	std::vector<arma::mat> nodes;
 	std::vector<arma::sp_mat> Pro;
 	int refines;
 
