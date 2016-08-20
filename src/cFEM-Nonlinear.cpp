@@ -25,8 +25,8 @@ int main() {
 	meshvec[4]=0.25;
 	//Mesh msh(meshvec,"blahdiddyblah");
 	FiniteElemNL femp(meshvec,"blah man yo");
-//	vec u=femp.u;
-//	u.print("u: ");
+	vec u=femp.u;
+	u.print("u: ");
 //	MeshMG mshmg(meshvec);
 //	mshmg.uniformrefine();
 	//vector<sp_mat> stiffmass=mshmg.assembleMatrix();
