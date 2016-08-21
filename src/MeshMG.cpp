@@ -90,7 +90,9 @@ void MeshMG::makeMesh(vec xr, vec yr) {
 	// Calculate the different values used to create nodes.
 	k(span(1, nnz.n_rows)) = nnz;
 	uword NE = k.n_rows;
-	HBs.push_back(zeros<umat>(NE,3));
+	HBs.push_back(zeros<umat>(3,3));
+	coarse2Fine.push_back(zeros<uvec>(3));
+	Pro.push_back(zeros<sp_mat>(3,3));
 	// Create the elements which will differ by odd and
 	// even elements.
 	umat elemup = zeros<umat>(NE, 3);
@@ -291,17 +293,17 @@ void MeshMG::uniformrefine(){
 
 void MeshMG::ProHB(){
 	uword nCoarse = Ns[Ns.size()-2];
-	uword nTotal=Ns.back();
+	uword nTotal=Ns[Ns.size()-1];
 	uword nFineNode=nTotal-nCoarse;
-	cout << nCoarse << endl;
+//	cout << nCoarse << endl;
 	uvec coarseNode=regspace<uvec>(0,nCoarse-1);
 	coarse2Fine.push_back(coarseNode);
 	uvec ii=join_vert(coarseNode,join_vert(HB.col(0),HB.col(0)));
 	uvec jj=join_vert(coarseNode,join_vert(HB.col(1),HB.col(2)));
-	cout << ii.n_rows << endl;
+//	cout << ii.n_rows << endl;
 	vec ss=join_vert(ones<vec>(nCoarse),
 			join_vert(0.5*ones<vec>(nFineNode),0.5*ones<vec>(nFineNode)));
-	cout << ss.n_rows << endl;
+//	cout << ss.n_rows << endl;
 	sp_mat Procurr(true,join_horiz(ii,jj).t(),ss,nTotal,nCoarse);
 	Pro.push_back(Procurr);
 

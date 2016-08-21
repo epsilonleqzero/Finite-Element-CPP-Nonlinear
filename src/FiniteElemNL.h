@@ -24,7 +24,6 @@ public:
 	virtual ~FiniteElemNL();
 	MeshMG mesh;
 	arma::vec u;
-	arma::uword J;
 private:
 	arma::vec calcRHS();
 	arma::vec NWTsolve(arma::vec b,arma::vec uf, arma::uword maxitr,

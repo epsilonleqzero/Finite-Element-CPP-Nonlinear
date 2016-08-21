@@ -73,18 +73,22 @@ FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun, int j) {
 	tol=tol*norm(r);
 	double err=2*tol;
 	vec u0=u;
-	while(k<30 && err>tol){
-		u=MgFAS(b,u,maxitr,tol,J);
+	while(k<50 && err>tol){
+		u=MgFAS(b,u,maxitr,1e-6,J);
+		//u=GSsolveb(b, u, 15, Mv, A, 1e-8, freeNode);
 		fu=pdenl->evalF(u);
 		residual=((A*u)+(Mv%fu)-b);
 		r=residual.rows(freeNode);
 		err=norm(r);
-		cout << "Error: " << err << endl;
-		cout << "Iteration: " << k << endl;
+		//u.print("u current: ");
 		k++;
 	}
-	u.print();
-	u=NWTsolve(b, u0, 10, Mv, A, 1e-6, mesh.freeNode);
+	cout << k << " iterations." << endl;
+	//vec uold=u;
+	//u.print();
+	//u=NWTsolve(b, u0, 10, Mv, A, 1e-6, mesh.freeNode);
+	//vec shouldbezero=u-uold;
+	//shouldbezero.print("Should be close to zero: ");
 
 	delete pde;
 	delete bdfun;
@@ -127,10 +131,10 @@ FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun) {
 	vec residual=((A*u)+(Mv%fu)-b);
 	uvec freeNode=mesh.freeNode;
 	vec r=residual.rows(freeNode);
-	uword k=0;
-	uword maxitr=20;
+	//uword k=0;
+	//uword maxitr=20;
 	tol=tol*norm(r);
-	double err=2*tol;
+	//double err=2*tol;
 	u=NWTsolve(b, u, 10, Mv, A, 1e-6, mesh.freeNode);
 	delete pde;
 	delete bdfun;
@@ -221,7 +225,7 @@ vec FiniteElemNL::NWTsolve(vec b,vec u, uword maxitr,
 		r=residual.rows(freeNode);
 		err=norm(r);
 		k=k+1;
-		cout << "Iteration: " << k << "error: " << err << endl;
+//		cout << "Iteration: " << k << " error: " << err << endl;
 	}
 	return u;
 
@@ -237,7 +241,7 @@ vec FiniteElemNL::GSsolve(vec b,vec u, uword maxitr,
 			mat currA=(Ar.cols(span(0,i-1))*u.rows(span(0,i-1)))+
 						(Ar.cols(span(i+1,Nu-1))*u.rows(span(i+1,Nu-1)));
 			//double ci=currA(0,0)+b(i);
-			double ci=currA(0,0)+b(i);
+			double ci=currA(0,0)-b(i);
 			vector<double> pars(3);
 			pars[0]=ci;
 			pars[1]=A(i,i);
@@ -256,9 +260,10 @@ vec FiniteElemNL::GSsolveb(vec b,vec u, uword maxitr,
 		uvec isfree=find(freeNode==i);
 		if(!isfree.empty()){
 			mat Ar=A.row(i);
-			mat currA=(Ar.cols(span(0,i-1))*u.rows(span(0,i-1)))
-						+(Ar.cols(span(i,Nu-1))*u.rows(span(i,Nu-1)));
-			double ci=currA(0,0)+b(i);
+			mat currA=(Ar.cols(span(0,i-1))*u.rows(span(0,i-1)))+
+					  (Ar.cols(span(i+1,Nu-1))*u.rows(span(i+1,Nu-1)));
+						//double ci=currA(0,0)+b(i);
+			double ci=currA(0,0)-b(i);
 			vector<double> pars(3);
 			pars[0]=ci;
 			pars[1]=A(i,i);
@@ -292,18 +297,22 @@ vec FiniteElemNL::MgFAS(vec b,vec u, uword maxitr,double tol,uword level){
 	if(level==0){
 		uvec freeNode=mesh.freeNodes[0];
 		vec M=mesh.masses[0];
-		mat A=mesh.stiffs[0];
-		u=NWTsolve(b,u,maxitr,M,A,tol,freeNode);
+		mat A(mesh.stiffs[0]);
+		u=NWTsolve(b,u,15,M,A,1e-8,freeNode);
 		return u;
 	}
 	else{
+//		cout << "Level "<< level << endl;
 		uvec freeNode=mesh.freeNodes[level];
 		vec M=mesh.masses[level];
-		mat A(mesh.stiffs[level]);
-		mat Pro(mesh.Pro[level]);
-		mat Res=Pro.t();
+		sp_mat stiff=(mesh.stiffs[level]);
+		mat A(stiff);
+		sp_mat Pro=(mesh.Pro[level]);
+		sp_mat Res=Pro.t();
+		//cout << "Pro size: " << Pro.size() << endl;
+		//cout << "U size: " << u.n_rows << endl;
 		// Pre-Smoothing
-		u=GSsolve(b, u, 15, M, A, 1e-6, mesh.freeNode);
+		u=GSsolve(b, u, 15, M, A, 1e-8, freeNode);
 
 		// MG
 		vec fp=pdenl->evalF(u);
@@ -316,7 +325,7 @@ vec FiniteElemNL::MgFAS(vec b,vec u, uword maxitr,double tol,uword level){
 		vec eh=Pro*(uc-vc);
 		u=u+eh;
 		// Pre-Smoothing
-		u=GSsolveb(b, u, 15, M, A, 1e-6, mesh.freeNode);
+		u=GSsolveb(b, u, 15, M, A, 1e-8, freeNode);
 		return u;
 	}
 }

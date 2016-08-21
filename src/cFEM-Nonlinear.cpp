@@ -24,9 +24,13 @@ int main() {
 	meshvec[3]=1.0;
 	meshvec[4]=0.25;
 	//Mesh msh(meshvec,"blahdiddyblah");
-	FiniteElemNL femp(meshvec,"blah man yo",1);
-	vec u=femp.u;
-	u.print("u: ");
+	clock_t start;
+	start=clock();
+	FiniteElemNL femp(meshvec,"blah man yo",3);
+	double duration=clock()-start;
+	cout << "This took: " << (duration/(double)(CLOCKS_PER_SEC))<< endl;
+	//vec u=femp.u;
+	//u.print("u: ");
 //	MeshMG mshmg(meshvec);
 //	mshmg.uniformrefine();
 	//vector<sp_mat> stiffmass=mshmg.assembleMatrix();

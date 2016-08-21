@@ -23,9 +23,9 @@ FunSCNL1D::FunSCNL1D() {
 
 FunSCNL1D::FunSCNL1D(vector<double> params) {
 	// Using pi from armadillo.
-	a=params[0];
-	m=params[1];
-	c=params[2];
+	c=params[0];
+	a=params[1];
+	m=params[2];
 }
 
 /**
