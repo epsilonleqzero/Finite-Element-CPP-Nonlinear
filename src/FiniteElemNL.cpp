@@ -40,6 +40,7 @@ FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun, int j) {
 	// Create mesh.
 	MeshMG msh(meshprops);
 	J=j;
+	cout << J << endl;
 	for(uword i=0;i<J;i++){
 		msh.uniformrefine();
 	}

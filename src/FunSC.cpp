@@ -8,7 +8,6 @@
  */
 
 #include "FunSC.h"
-#include "Mesh.h"
 
 using namespace std;
 using namespace arma;

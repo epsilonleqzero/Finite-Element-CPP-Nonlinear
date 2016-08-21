@@ -8,7 +8,6 @@
  */
 
 #include "FunSCNL1D.h"
-#include "Mesh.h"
 #include <vector>
 
 using namespace std;
