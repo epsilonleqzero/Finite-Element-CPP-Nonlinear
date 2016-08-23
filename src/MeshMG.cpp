@@ -2,10 +2,11 @@
  * Mesh.cpp
  *
  * This class contains the mesh and mesh properties to be used
- * in the finite element method (FiniteElem.cpp).
+ * in the nonlinear finite element method (FiniteElemNL.cpp).
  *
  * It constructs the mesh, then constructs the stiffness matrix and
- * calculates the boundary.
+ * calculates the boundary. It can be refined by calling
+ * uniformrefine().
  *
  *  Created on: Aug 13, 2016
  *      Author: Ted Kwan
@@ -39,9 +40,7 @@ MeshMG::MeshMG(vector<double> meshprops) {
 	vec yr = linspace<vec>(meshprops[2], meshprops[3], n + 1);
 	// Create the mesh.
 	makeMesh(xr, yr);
-
 	// Assemble stiffness matrix
-
 	vector<sp_mat> stiffmass = assembleMatrix();
 	stiffness=stiffmass[0];
 	mass=stiffmass[1];
@@ -156,6 +155,7 @@ vector<sp_mat> MeshMG::assembleMatrix() {
 	sp_mat A(true, inds.t(), sA, N, N, true, true);
 	vector<sp_mat> matvec(2);
 	matvec[0]=A;
+	// Create mass matrix.
 	vec Mv=accumArrayM(join_vert(elem.col(0), join_vert(elem.col(1),elem.col(2)))
 			,join_vert(area, join_vert(area,area))/(3.0), N);
 	uvec inds2=regspace<uvec>(0,Mv.n_rows-1);
@@ -225,6 +225,17 @@ void MeshMG::findBoundary() {
 
 }
 
+/**
+ * accumArrayM implements the accumarray method from MATLAB.
+ *
+ * This is a direct implementation and does the exact same thing
+ * as the MATLAB function.
+ *
+ * @param subs - vector of indices.
+ * @param ar - vector of values.
+ * @param N - size of the array to be made.
+ * @return accumulated array (same as MATLAB would).
+ */
 vec MeshMG::accumArrayM(uvec subs,vec ar,uword N){
 
 	vec S=zeros<vec>(N);
@@ -251,34 +262,54 @@ vec MeshMG::accumArrayM(uvec subs,vec ar,uword N){
 	return S;
 }
 
+/**
+ * uniformrefine refines the mesh and re-calculates the boundary
+ * as well as all of the needed matrices and vectors.
+ *
+ * This function ensures that the mesh is refined by adding nodes at
+ * the midpoints of all edges in each element.
+ *
+ */
 void MeshMG::uniformrefine(){
+	// Find all of the edges.
 	umat e23=join_horiz(elem.col(1),elem.col(2));
 	umat e31=join_horiz(elem.col(2),elem.col(0));
 	umat e12=join_horiz(elem.col(0),elem.col(1));
+	// Matrix with all edge indices (n1 -> n2),
 	umat totalEdge=sort(join_vert(e23,join_vert(e31,e12)),"ascend",1);
 	ArmaFuns funs;
+	// Implementation of unique in MATLAB.
 	umat edge=funs.uniqueu(totalEdge);
 	uvec js=funs.uniqueidx;
 	uword NE=edge.n_rows;
+	// Map elems to edges.
 	umat elem2edge=zeros<umat>(NT*3,1);
 	elem2edge.col(0)=js;
 	elem2edge.reshape(NT,3);
+	// New nodes to create.
 	mat nnode=(node.rows(edge.col(0))+node.rows(edge.col(1)))/(2.0);
+	// Concatinate the new nodes with the old.
 	node=join_vert(node,nnode);
+	// Re-map edges including new nodes.
 	uvec edge2newNode=regspace<uvec>(N,N+NE-1);
+	// Make hierarchical basis.
 	HB=join_horiz(edge2newNode,edge);
 	uvec t=regspace<uvec>(0,NT-1);
+	// Indices for the new elements.
 	umat p= join_horiz(elem,
 			join_horiz(edge2newNode.rows(elem2edge.col(0)),
 			join_horiz(edge2newNode.rows(elem2edge.col(1)),
 					edge2newNode.rows(elem2edge.col(2)))));
+	// Add elements to the elem matrix.
 	elem.rows(t)=join_horiz(p.col(0),join_horiz(p.col(4),p.col(5)));
+	// Create new elements.
 	umat nelem=zeros<umat>(4*NT,3);
 	nelem.rows(span(NT,2*NT-1))=join_horiz(p.col(5),join_horiz(p.col(1),p.col(3)));
 	nelem.rows(span(2*NT,3*NT-1))=join_horiz(p.col(4),join_horiz(p.col(3),p.col(2)));
 	nelem.rows(span(3*NT,4*NT-1))=join_horiz(p.col(3),join_horiz(p.col(4),p.col(5)));
 	nelem.rows(span(0,NT-1))=elem;
 	elem=nelem;
+	// Save new information.
 	NT=elem.n_rows;
 	N=node.n_rows;
 	refines=refines+1;
@@ -291,22 +322,32 @@ void MeshMG::uniformrefine(){
 	findBoundary();
 }
 
+/**
+ * ProHB creates the prolongation and restriction matrices,
+ * as well as maps the fine nodes to the coarse nodes for the FAS.
+ *
+ * This function ensures that the multigrid method works properly and
+ * interpolates the coarse grid to the fine grid, as well as restricts
+ * the coarse grid and the fine grid.
+ *
+ */
 void MeshMG::ProHB(){
+	// Get the number of coarse nodes.
 	uword nCoarse = Ns[Ns.size()-2];
 	uword nTotal=Ns[Ns.size()-1];
+	// Get the number of fine grid only nodes.
 	uword nFineNode=nTotal-nCoarse;
-//	cout << nCoarse << endl;
 	uvec coarseNode=regspace<uvec>(0,nCoarse-1);
+	// Save data for use by FEM.
 	coarse2Fine.push_back(coarseNode);
+	// Setup indices for the prolongation matrix.
 	uvec ii=join_vert(coarseNode,join_vert(HB.col(0),HB.col(0)));
 	uvec jj=join_vert(coarseNode,join_vert(HB.col(1),HB.col(2)));
-//	cout << ii.n_rows << endl;
 	vec ss=join_vert(ones<vec>(nCoarse),
 			join_vert(0.5*ones<vec>(nFineNode),0.5*ones<vec>(nFineNode)));
-//	cout << ss.n_rows << endl;
+	// Quick sparse construction of the prolongation matrix.
 	sp_mat Procurr(true,join_horiz(ii,jj).t(),ss,nTotal,nCoarse);
 	Pro.push_back(Procurr);
-
 }
 
 MeshMG::~MeshMG() {

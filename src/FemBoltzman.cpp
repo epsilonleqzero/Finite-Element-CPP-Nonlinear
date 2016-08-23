@@ -25,6 +25,7 @@ using namespace arma;
  * @param jobj - Java object (provided)
  * @param jarray - Java double array to extract parameters from
  * @param femeqn - String representing the name of the FEM equation to solve.
+ * @param levels - jint which represents the number of multigrid refinement levels.
  * @return returns a double array representing the solution to the PDE.
  */
 JNIEXPORT jdoubleArray JNICALL Java_net_tedkwan_javafemjni_FemBoltzman_cFEMnLin(

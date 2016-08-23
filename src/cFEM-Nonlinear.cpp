@@ -3,7 +3,7 @@
 // Author      : Ted Kwan
 // Version     :
 // Copyright   : Your copyright notice
-// Description : Hello World in C++, Ansi-style
+// Description : Nonlinear Finite Element Method in C++
 //============================================================================
 
 #include <iostream>
@@ -16,6 +16,10 @@
 using namespace std;
 using namespace arma;
 
+/**
+* This is a testing program for the nonlinear finite element method
+* in CPP.
+*/
 int main() {
 	vector<double> meshvec(5);
 	meshvec[0]=0;

@@ -34,13 +34,14 @@ FiniteElemNL::FiniteElemNL() {
  *
  * @param meshprops - Vector containing the information on the square.
  * @param fun - string containing the name of the function to use.
+ * @param j - integer representing the number of refinements and multigrid levels.
  *
  */
 FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun, int j) {
 	// Create mesh.
 	MeshMG msh(meshprops);
 	J=j;
-	cout << J << endl;
+	// Uniform refine the mesh J times.
 	for(uword i=0;i<J;i++){
 		msh.uniformrefine();
 	}
@@ -58,14 +59,14 @@ FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun, int j) {
 	mat node=mesh.node;
 	// Calculate the boundary condition.
 	u.rows(mesh.bdNode)=bdfun->evalF(node.rows(mesh.bdNode));
-	// Release the function classes created.
-	// Setup system to solve.
-	vec br=b-(mesh.stiffness*u);
+	// Setup params to use for FAS.
 	double tol=1e-6;
+	// Global stiffness and mass matrices.
 	mat A(mesh.stiffness);
 	mat M(mesh.mass);
 	vec Mv=M.diag();
 	vec fu=pdenl->evalF(u);
+	// Setup system to solve.
 	vec residual=((A*u)+(Mv%fu)-b);
 	uvec freeNode=mesh.freeNode;
 	vec r=residual.rows(freeNode);
@@ -75,22 +76,16 @@ FiniteElemNL::FiniteElemNL(vector<double> meshprops,string fun, int j) {
 	double err=2*tol;
 	vec u0=u;
 	while(k<50 && err>tol){
+		// Run the FAS method and solve.
 		u=MgFAS(b,u,maxitr,1e-6,J);
-		//u=GSsolveb(b, u, 15, Mv, A, 1e-8, freeNode);
 		fu=pdenl->evalF(u);
 		residual=((A*u)+(Mv%fu)-b);
 		r=residual.rows(freeNode);
 		err=norm(r);
-		//u.print("u current: ");
 		k++;
 	}
 	cout << k << " iterations." << endl;
-	//vec uold=u;
-	//u.print();
-	//u=NWTsolve(b, u0, 10, Mv, A, 1e-6, mesh.freeNode);
-	//vec shouldbezero=u-uold;
-	//shouldbezero.print("Should be close to zero: ");
-
+	// Release the function classes created.
 	delete pde;
 	delete bdfun;
 	delete pdenl;
@@ -203,25 +198,41 @@ vec FiniteElemNL::accumArray(uvec subs,vec ar,uword N){
 	return S;
 }
 
-
+/**
+ * NWTsolve implements Newton's method for nonlinear equations.
+ *
+ * This method runs Newton's method to solve the nonlinear
+ * system for the FAS method. It is used on the coarsest grid.
+ *
+ * @param b - vector for right hand side (or residual).
+ * @param u - vector of initial guess, and return vector.
+ * @param maxitr - maximum number of iterations.
+ * @param M - vector of mass matrix.
+ * @param A - stiffness matrix.
+ * @param tol - double for the tolerance to solve to.
+ * @param freeNode - vector containing non-boundary node indices.
+ * @return u - solution to the nonlinear system.
+ */
 vec FiniteElemNL::NWTsolve(vec b,vec u, uword maxitr,
 		vec M, mat A ,double tol,uvec freeNode){
 	// Initial setup
-	//uword N=u.n_rows;
 	vec fu=pdenl->evalF(u);
-	//vec Df=pdenl->evalDF(uf);
 	vec residual=((A*u)+(M%fu)-b);
 	vec r=residual.rows(freeNode);
 	uword k=0;
 	tol=tol*norm(r);
 	double err=2*tol;
 	while(k<maxitr && err>tol){
+		// Run Newton's method.
 		vec Df=M%(pdenl->evalDF(u));
 		mat Dfm=diagmat(Df);
+		// Setup matrix.
 		mat B=A+Dfm;
+		// Solve the error equation.
 		vec e=solve(B.submat(freeNode, freeNode), r);
 		u.rows(freeNode)=u.rows(freeNode)-e;
 		fu=pdenl->evalF(u);
+		// Calculate residual.
 		residual=((A*u)+(M%fu)-b);
 		r=residual.rows(freeNode);
 		err=norm(r);
@@ -232,34 +243,70 @@ vec FiniteElemNL::NWTsolve(vec b,vec u, uword maxitr,
 
 }
 
+/**
+ * GSsolve implements Gauss-Seidel's method for nonlinear systems.
+ *
+ * This method runs the Gauss-Seidel method to solve the nonlinear
+ * system for the FAS method. It is used as a pre-smoother.
+ *
+ * @param b - vector for right hand side (or residual).
+ * @param u - vector of initial guess, and return vector.
+ * @param maxitr - maximum number of iterations.
+ * @param M - vector of mass matrix.
+ * @param A - stiffness matrix.
+ * @param tol - double for the tolerance to solve to.
+ * @param freeNode - vector containing non-boundary node indices.
+ * @return u - solution to the nonlinear system.
+ */
 vec FiniteElemNL::GSsolve(vec b,vec u, uword maxitr,
 		vec M, mat A ,double tol,uvec freeNode){
 	uword Nu=u.n_rows;
 	for(uword i=1;i<Nu-1;i++){
 		uvec isfree=find(freeNode==i);
+		// Only solve on non-boundary nodes.
 		if(!isfree.empty()){
+			// Solve the nonlinear system.
 			mat Ar=A.row(i);
 			mat currA=(Ar.cols(span(0,i-1))*u.rows(span(0,i-1)))+
 						(Ar.cols(span(i+1,Nu-1))*u.rows(span(i+1,Nu-1)));
-			//double ci=currA(0,0)+b(i);
 			double ci=currA(0,0)-b(i);
 			vector<double> pars(3);
 			pars[0]=ci;
 			pars[1]=A(i,i);
 			pars[2]=M(i);
 			FunSCNL1D nfun(pars);
+			// Solve the 1-D equation.
 			u(i)=NWTsolve1D(nfun,u(i),1e-6,10);
 		}
 	}
 	return u;
 }
 
+/**
+ * GSsolveb implements Gauss-Seidel's method (in reverse) 
+ * for nonlinear systems.
+ *
+ * This method runs the backwards Gauss-Seidel method to solve 
+ * the nonlinear system for the FAS method. It is used as a 
+ * post-smoother.
+ *
+ * @param b - vector for right hand side (or residual).
+ * @param u - vector of initial guess, and return vector.
+ * @param maxitr - maximum number of iterations.
+ * @param M - vector of mass matrix.
+ * @param A - stiffness matrix.
+ * @param tol - double for the tolerance to solve to.
+ * @param freeNode - vector containing non-boundary node indices.
+ * @return u - solution to the nonlinear system.
+ */
 vec FiniteElemNL::GSsolveb(vec b,vec u, uword maxitr,
 		vec M, mat A ,double tol,uvec freeNode){
 	uword Nu=u.n_rows;
 	for(uword i=Nu-2;i>=1;i--){
 		uvec isfree=find(freeNode==i);
+		// Only solve on non-boundary nodes.
 		if(!isfree.empty()){
+			// Solve the nonlinear system.
 			mat Ar=A.row(i);
 			mat currA=(Ar.cols(span(0,i-1))*u.rows(span(0,i-1)))+
 					  (Ar.cols(span(i+1,Nu-1))*u.rows(span(i+1,Nu-1)));
@@ -270,12 +317,25 @@ vec FiniteElemNL::GSsolveb(vec b,vec u, uword maxitr,
 			pars[1]=A(i,i);
 			pars[2]=M(i);
 			FunSCNL1D nfun(pars);
+			// Solve the 1-D equation.
 			u(i)=NWTsolve1D(nfun,u(i),1e-6,10);
 		}
 	}
 	return u;
 }
 
+/**
+ * NWTsolve1D implements Newton's method for nonlinear equations.
+ *
+ * This method runs Newton's method for nonlinear equations in 1D.
+ * It is used as part of the Gauss-Seidel methods.
+ *
+ * @param f - Function of equation to solve.
+ * @param x0 - initial guess for the solution.
+ * @param maxitr - maximum number of iterations.
+ * @param tol - double for the tolerance to solve to.
+ * @return x - solution to the nonlinear equation.
+ */
 double FiniteElemNL::NWTsolve1D(FunSCNL1D f, double x0, double tol, uword maxitr){
 	double fp=f.evalF(x0);
 	double df=f.evalDF(x0);
@@ -293,37 +353,54 @@ double FiniteElemNL::NWTsolve1D(FunSCNL1D f, double x0, double tol, uword maxitr
 	return x;
 }
 
+/**
+ * MgFAS implements full approximation scheme for nonlinear finite
+ * element systems. 
+ *
+ * This method runs the backwards FAS scheme to solve 
+ * the nonlinear system for the Poisson-Boltzmann equation.
+ *
+ * @param b - vector for right hand side (or residual).
+ * @param u - vector of current guess, and return vector.
+ * @param maxitr - maximum number of iterations.
+ * @param tol - double for the tolerance to solve to.
+ * @param level - number of refinements on grid.
+ * @return u - approximated solution to the PDE.
+ */
 vec FiniteElemNL::MgFAS(vec b,vec u, uword maxitr,double tol,uword level){
 
 	if(level==0){
+		// Base case.
 		uvec freeNode=mesh.freeNodes[0];
 		vec M=mesh.masses[0];
 		mat A(mesh.stiffs[0]);
+		// Directly solve on coarse grid.
 		u=NWTsolve(b,u,15,M,A,1e-8,freeNode);
 		return u;
 	}
 	else{
-//		cout << "Level "<< level << endl;
 		uvec freeNode=mesh.freeNodes[level];
 		vec M=mesh.masses[level];
 		sp_mat stiff=(mesh.stiffs[level]);
 		mat A(stiff);
 		sp_mat Pro=(mesh.Pro[level]);
 		sp_mat Res=Pro.t();
-		//cout << "Pro size: " << Pro.size() << endl;
-		//cout << "U size: " << u.n_rows << endl;
 		// Pre-Smoothing
 		u=GSsolve(b, u, 15, M, A, 1e-8, freeNode);
 
 		// MG
 		vec fp=pdenl->evalF(u);
+		// Restrict to coarse grid.
 		vec rHc=Res*(b-(A*u)-(M%fp));
 		vec vc=u.rows(mesh.coarse2Fine[level]);
 		vec fpvc=pdenl->evalF(vc);
+		// Correction for restriction to coarse grid.
 		vec rc=(mesh.stiffs[level-1]*vc)+(mesh.masses[level-1]%fpvc);
 		// Recursion step
 		vec uc=MgFAS(rHc+rc,vc,maxitr,tol,level-1);
+		// Prolongate error equation to fine grid.
 		vec eh=Pro*(uc-vc);
+		// Correction step.
 		u=u+eh;
 		// Pre-Smoothing
 		u=GSsolveb(b, u, 15, M, A, 1e-8, freeNode);
